@@ -84,23 +84,29 @@ find_recs = function(title, author) {
       c_desc_new = Corpus(VectorSource(desc))
       dtm_desc_new = DocumentTermMatrix(c_desc_new)
       
-      #gather recommendations
       recs = data.frame(matrix(nrow = 0, ncol = ncol(books[[1]])))
       for (i in 1:2) {
         if(neighbors[i] > 0) {
+          #predict posterior probabilities
           lda_desc_new = posterior(lda_desc[[topic_new[i]]], dtm_desc_new)
           lda_desc_topics_new = lda_desc_new$topics
           
           #remove the book from the training set if it is already included
           b = books[[topic_new[i]]]
+          t = lda_desc_topics[[topic_new[i]]]
+          
           title_author = tolower(rm_space(paste(b$title, b$author)))
           title_author_new = tolower(rm_space(paste(title, author)))
           if(length(grep(title_author_new, title_author)) > 0) {
-            b = b[-grep(title_author_new, title_author), ] 
+            b = b[-grep(title_author_new, title_author), ]
+            t = t[-grep(title_author_new, title_author), ]
           }
           
+          #calculate distances between the book and the training set using the posterior probabilities
           dists = apply(lda_desc_topics[[topic_new[i]]], 1, function(x) dist(rbind(x, lda_desc_topics_new)))
-          recs = rbind(recs, b[order(dists), ][1:neighbors[i], ])  
+          
+          #pick the closest neighbors up to the determined neighbor size
+          recs = rbind(recs, b[order(dists), ][1:neighbors[i], ])
         }
       }
       out = list(recs, 'Results are based on descriptions on goodreads.')
