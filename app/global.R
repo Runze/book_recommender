@@ -3,6 +3,8 @@ library(topicmodels)
 library(rvest)
 
 load('data/books.RData')
+load('data/dtm_genre.RData')
+load('data/dtm_desc_gr_t.RData')
 load('data/lda_genre.RData')
 load('data/lda_desc.RData')
 load('data/lda_desc_topics.RData')
@@ -14,8 +16,6 @@ rm_space = function(x) {
 }
 
 find_recs = function(title, author) {
-  #first look the book up on goodreads
-  #using book title and author name
   title = tolower(rm_space(title))
   author = tolower(rm_space(author))
   link = gsub(' ', '%20', paste0('https://www.goodreads.com/search?&query=', paste(title, author)))
@@ -23,7 +23,6 @@ find_recs = function(title, author) {
   
   #check if anything is found
   #it appears that shiny doesn't work well with css selectors. hence xpath is used
-  #xpath derived from SelectorGadget: http://selectorgadget.com
   found = html_text(html_nodes(ps, xpath = '//*[contains(concat( " ", @class, " " ), concat( " ", "searchSubNavContainer", " " ))]'))
   
   if(length(found) == 0 | length(grep('0 of 0 results', found)) > 0) {
@@ -56,20 +55,22 @@ find_recs = function(title, author) {
     if (!is.na(genres[1]) & !is.na(descs[1])) {
       genre = paste(genres, collapse = '')
       genre = gsub('-', '', genre)
-      genre = gsub('[^[:alpha:]]', ' ', genre)
+      genre = gsub('[^A-Za-z]', ' ', genre)
       genre = gsub('users|Add |a |comment |comments ', ' ', genre)
       genre = gsub('Non Fiction', 'Nonfiction', genre)
       
-      #goodreads may present 2 versions of descriptions, one of which is truncated
-      #hence look for the longer version
       desc = descs[which.max(sapply(descs, nchar))]
       desc = gsub('-', '', desc)
-      desc = gsub('[^[:alpha:]]', ' ', desc)
+      desc = gsub('[^A-Za-z]', ' ', desc)
       
       #first find the matching genre
-      #using the genre lda model
       c_genre_new = Corpus(VectorSource(genre))
       dtm_genre_new = DocumentTermMatrix(c_genre_new)
+      
+      #only keep terms included in the training dtm
+      dtm_genre_new = dtm_genre_new[, which(colnames(dtm_genre_new) %in% colnames(dtm_genre))]
+      
+      #apply the lda model
       lda_genre_new = posterior(lda_genre, dtm_genre_new)$topics
       
       #find the top 2 genre
@@ -80,26 +81,31 @@ find_recs = function(title, author) {
       neighbors = c(ceiling(10 * wgt), floor(10 * (1 - wgt)))
       
       #then find the nearest neighbors from the matching topics
-      #using the description lda models
-      c_desc_new = Corpus(VectorSource(desc))
+      c_desc_new = Corpus(VectorSource(paste(desc, genre)))
       dtm_desc_new = DocumentTermMatrix(c_desc_new)
       
-      #gather recommendations
       recs = data.frame(matrix(nrow = 0, ncol = ncol(books[[1]])))
       for (i in 1:2) {
         if(neighbors[i] > 0) {
+          #only keep terms included in the training dtm
+          dtm_desc_new = dtm_desc_new[, which(colnames(dtm_desc_new) %in% colnames(dtm_desc_gr_t[[i]]))]
+          
+          #apply the lda model
           lda_desc_new = posterior(lda_desc[[topic_new[i]]], dtm_desc_new)
           lda_desc_topics_new = lda_desc_new$topics
           
           #remove the book from the training set if it is already included
           b = books[[topic_new[i]]]
+          t = lda_desc_topics[[topic_new[i]]]
+          
           title_author = tolower(rm_space(paste(b$title, b$author)))
           title_author_new = tolower(rm_space(paste(title, author)))
           if(length(grep(title_author_new, title_author)) > 0) {
-            b = b[-grep(title_author_new, title_author), ] 
+            b = b[-grep(title_author_new, title_author), ]
+            t = t[-grep(title_author_new, title_author), ]
           }
           
-          dists = apply(lda_desc_topics[[topic_new[i]]], 1, function(x) dist(rbind(x, lda_desc_topics_new)))
+          dists = apply(t, 1, function(x) dist(rbind(x, lda_desc_topics_new)))
           recs = rbind(recs, b[order(dists), ][1:neighbors[i], ])  
         }
       }

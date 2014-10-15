@@ -7,13 +7,14 @@ shinyUI(fluidPage(theme='bootstrap.min.css',
                              '.recalculating {opacity: 1.0;}'
                   ),
                   
-                  titlePanel('New York Times and NPR best-seller recommender'),
+                  titlePanel('Recommender for New York Times and NPR best-seller, and Goodreads\'  most recommended books'),
                   
                   sidebarPanel(
                     textInput('title', 'Please enter the title of a book you like', value = ''),
                     textInput('author', 'Please enter the author of the book', value = ''),
                     actionButton('submit', 'Submit'),
-                    h6(a('www.runzemc.com', href='http://www.runzemc.com'))
+                    h6(a('www.runzemc.com', href='http://www.runzemc.com')),
+                    h6(a('github.com/Runze', href='https://github.com/Runze/book_recommender'))
                   ),
                   
                   mainPanel(

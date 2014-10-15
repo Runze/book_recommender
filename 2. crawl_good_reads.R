@@ -11,12 +11,9 @@ rm_space = function(x) {
   x = gsub(' +', ' ', x)  
 }
 
-#remove duplicate books (the same book may appear on multiple lists multiple times)
 title_author = tolower(rm_space(paste(bs_ex$title, bs_ex$author)))
 bs_ex_uni = bs_ex[!duplicated(title_author), ]
 
-#extract book descriptions and genres from goodreads
-#using isbn
 extract_desc = function(x) {
   link = paste0('https://www.goodreads.com/search?&query=', x)
   ps = html(link)
@@ -25,9 +22,6 @@ extract_desc = function(x) {
   #description
   descs = tryCatch(html_text(html_nodes(ps, '#description span')), 
                    error = function(cond) return(NA))
-  
-  #goodreads may present 2 versions of descriptions, one of which is truncated
-  #hence look for the longer version
   desc = descs[which.max(sapply(descs, nchar))]
   desc = gsub('-', '', desc)
   desc = gsub('[^[:alpha:]]', ' ', desc)

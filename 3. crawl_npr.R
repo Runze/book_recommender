@@ -1,7 +1,7 @@
 library(rvest)
+library(plyr)
 options(stringsAsFactors = F)
 
-#scrape npr's bestsellers
 npr = list()
 for (year in 2012:2014) {
   for (week in 1:52) {
@@ -50,7 +50,6 @@ npr_uni = data.frame(sapply(npr_uni,  as.character))
 save(npr_uni, file = 'npr_uni.RData')
 
 #search for them on goodreads
-#using book titles and authors
 npr_gr = data.frame(matrix(nrow = 0, ncol = 6))
 for(n in 1:nrow(npr_uni)) {
   cat(n, '\n')
@@ -58,7 +57,7 @@ for(n in 1:nrow(npr_uni)) {
   link = gsub(' ', '%20', paste0('https://www.goodreads.com/search?&query=', paste(npr_uni$title[n], npr_uni$author[n])))
   ps = html(link)
   
-  #check if the book is found
+  #check if book is found
   found = html_text(html_nodes(ps, '.searchSubNavContainer'))
   if(length(found) > 0 & length(grep('0 of 0 results', found)) == 0) {
     #analyze returned results
@@ -105,7 +104,11 @@ for(n in 1:nrow(npr_uni)) {
   }
   Sys.sleep(1)
 }
-
 names(npr_gr) = c('title', 'author', 'genre_gr', 'desc', 'img', 'amazon')
 npr_gr = subset(npr_gr, genre_gr != '')
 save(npr_gr, file = 'npr_gr.RData')
+
+#combine nyt with npr
+load('bs_ex_uni.RData')
+nyt_npr = data.frame(rbind.fill(bs_ex_uni, npr_gr))
+save(nyt_npr, file = 'nyt_npr.RData')

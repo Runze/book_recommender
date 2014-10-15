@@ -1,14 +1,12 @@
 library(httr)
 library(plyr)
 
-#first get a list of available bestseller lists (e.g., hardcover fiction)
-key = '<api_key>'
+key = 'f8597b398ce96a249ef0cf81a074fe87:5:65450565'
 link = sprintf('http://api.nytimes.com/svc/books/v2/lists/names.json?api-key=%s', key)
 lists = content(GET(link))
 lists_n = sapply(lists$results, function(x) x$list_name_encoded)
-lists_n_sub = lists_n[c(3:5, 7:9)] #only pick fictions and non-fictions
+lists_n_sub = lists_n[c(3:5, 7:9)]
 
-#then get all the books appeared on the chosen bestseller lists
 dates = seq(as.Date('2008-06-08'), as.Date('2014-10-05'), by = 'week')
 bs = list()
 k = 0
@@ -28,7 +26,6 @@ for (i in 1:length(lists_n_sub)) {
 
 save (bs, file = 'bs.RData')
 
-#extract relevant information
 extract_info = function(x) {
   y = list()
   

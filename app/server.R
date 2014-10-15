@@ -19,7 +19,7 @@ shinyServer(function(input, output, session){
     output$msg = renderUI({HTML('<h6>', out$msg, '<h6>')})
     output$table = renderGvis({
       if (length(out) > 1) {
-        gvisTable(out$recs, options = list(allowHtml = T))
+        gvisTable(out$recs, options = list(allowHtml = T, width = 900, height = 600))
       }
     })
   })
