@@ -87,10 +87,14 @@ find_recs = function(title, author) {
       recs = data.frame(matrix(nrow = 0, ncol = ncol(books[[1]])))
       for (i in 1:2) {
         if(neighbors[i] > 0) {
+<<<<<<< HEAD
           #only keep terms included in the training dtm
           dtm_desc_new = dtm_desc_new[, which(colnames(dtm_desc_new) %in% colnames(dtm_desc_gr_t[[i]]))]
           
           #apply the lda model
+=======
+          #predict posterior probabilities
+>>>>>>> FETCH_HEAD
           lda_desc_new = posterior(lda_desc[[topic_new[i]]], dtm_desc_new)
           lda_desc_topics_new = lda_desc_new$topics
           
@@ -105,8 +109,16 @@ find_recs = function(title, author) {
             t = t[-grep(title_author_new, title_author), ]
           }
           
+<<<<<<< HEAD
           dists = apply(t, 1, function(x) dist(rbind(x, lda_desc_topics_new)))
           recs = rbind(recs, b[order(dists), ][1:neighbors[i], ])  
+=======
+          #calculate distances between the book and the training set using the posterior probabilities
+          dists = apply(lda_desc_topics[[topic_new[i]]], 1, function(x) dist(rbind(x, lda_desc_topics_new)))
+          
+          #pick the closest neighbors up to the determined neighbor size
+          recs = rbind(recs, b[order(dists), ][1:neighbors[i], ])
+>>>>>>> FETCH_HEAD
         }
       }
       out = list(recs, 'Results are based on descriptions on goodreads.')
