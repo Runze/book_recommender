@@ -94,7 +94,7 @@ find_recs = function(title, author) {
           lda_desc_new = posterior(lda_desc[[topic_new[i]]], dtm_desc_new)
           lda_desc_topics_new = lda_desc_new$topics
           
-          #remove the book from the training set if it is already included
+          #remove the book from the training set if it is already included (based on title and author name)
           b = books[[topic_new[i]]]
           t = lda_desc_topics[[topic_new[i]]]
           
