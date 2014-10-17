@@ -1,7 +1,8 @@
 library(httr)
 library(plyr)
+source('app/helper_functions.R')
 
-key = 'f8597b398ce96a249ef0cf81a074fe87:5:65450565'
+key = '<key>'
 link = sprintf('http://api.nytimes.com/svc/books/v2/lists/names.json?api-key=%s', key)
 lists = content(GET(link))
 lists_n = sapply(lists$results, function(x) x$list_name_encoded)
@@ -43,5 +44,32 @@ extract_info = function(x) {
 
 bs_ex = lapply(bs, extract_info)
 bs_ex = ldply(bs_ex, data.frame)
-
+bs_ex = data.frame(sapply(bs_ex, as.character))
 save (bs_ex, file = 'bs_ex.RData')
+
+#dedupe
+title_author = tolower(rm_space(paste(bs_ex$title, bs_ex$author)))
+bs_ex_uni = bs_ex[!duplicated(title_author), ]
+
+#retrieve genres and descriptions from goodreads
+extract_gr = function(x) {
+  link = paste0('https://www.goodreads.com/search?&query=', x)
+  ps = html(link)
+  y = list()
+  
+  #get genres
+  y$genre = extract_genre(ps, 'css')
+  
+  #get descriptions
+  y$desc = extract_desc(ps, 'css')
+  
+  return(y)
+}
+
+gr = lapply(bs_ex_uni$isbn1, extract_gr)
+bs_ex_uni$desc_gr = sapply(gr, function(x) x$desc)
+bs_ex_uni$genre_gr = sapply(gr, function(x) x$genre)
+
+#remove entries without a genre
+bs_ex_uni = subset(bs_ex_uni, genre_gr != '')
+save(bs_ex_uni, file = 'bs_ex_uni.RData')
