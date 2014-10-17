@@ -81,8 +81,8 @@ find_recs = function(title, author) {
           #remove the book from the training set if it is already included
           title_author_train = tolower(paste(books[[topic_new[i]]]$title, books[[topic_new[i]]]$author))
           title_author_new = tolower(paste(title, author))
-          title_author_train = gsub('[^a-z]', '', title_author_train)
-          title_author_new = gsub('[^a-z]', '', title_author_new)
+          title_author_train = gsub('[^a-z0-9]', '', title_author_train)
+          title_author_new = gsub('[^a-z0-9]', '', title_author_new)
           
           descs_train = descs[[topic_new[i]]][!grepl(title_author_new, title_author_train)]
           books_train = books[[topic_new[i]]][!grepl(title_author_new, title_author_train), ]
@@ -100,7 +100,7 @@ find_recs = function(title, author) {
           recs = rbind(recs, books_train[order(sim, decreasing = T)[1:neighbors[i]], ])
         }
       }
-      out = list(recs, 'Results are based on descriptions on goodreads.')
+      out = list(recs, 'Results are based on descriptions on Goodreads.')
       names(out) = c('recs', 'msg')
     }
     else {
