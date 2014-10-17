@@ -1,19 +1,13 @@
 library(tm)
+library(NLP)
+library(openNLP)
 library(topicmodels)
 library(rvest)
+source('helper_functions.R')
 
-load('data/books.RData')
-load('data/dtm_genre.RData')
-load('data/dtm_desc_gr_t.RData')
 load('data/lda_genre.RData')
-load('data/lda_desc.RData')
-load('data/lda_desc_topics.RData')
-
-rm_space = function(x) {
-  x = gsub('^ +', '', x)
-  x = gsub(' +$', '', x)
-  x = gsub(' +', ' ', x)  
-}
+load('data/books.RData')
+load('data/descs.RData')
 
 find_recs = function(title, author) {
   title = tolower(rm_space(title))
@@ -48,28 +42,18 @@ find_recs = function(title, author) {
     
     #extract genre and description
     ps_found = html(link_found)
-    genres = tryCatch(html_text(html_nodes(ps_found, xpath = '//*[contains(concat( " ", @class, " " ), concat( " ", "elementList", " " ))]')),
-                      error = function(cond) return(NA))
-    descs = tryCatch(html_text(html_nodes(ps_found, xpath = '//*[(@id = "description")]')), 
-                     error = function(cond) return(NA))
-    if (!is.na(genres[1]) & !is.na(descs[1])) {
-      genre = paste(genres, collapse = '')
-      genre = gsub('-', '', genre)
-      genre = gsub('[^A-Za-z]', ' ', genre)
-      genre = gsub('users|Add |a |comment |comments ', ' ', genre)
-      genre = gsub('Non Fiction', 'Nonfiction', genre)
-      
-      desc = descs[which.max(sapply(descs, nchar))]
-      desc = gsub('-', '', desc)
-      desc = gsub('[^A-Za-z]', ' ', desc)
-      
-      #first find the matching genre
-      c_genre_new = Corpus(VectorSource(genre))
+    
+    #get genres
+    genres = extract_genre(ps_found, 'xpath')
+    
+    #get descriptions
+    desc = extract_desc(ps_found, 'xpath')
+    
+    if (!is.na(genres) & !is.na(desc)) {
+      #first find the matching genres
+      c_genre_new = Corpus(VectorSource(genres))
       dtm_genre_new = DocumentTermMatrix(c_genre_new)
-      
-      #only keep terms included in the training dtm
-      dtm_genre_new = dtm_genre_new[, which(colnames(dtm_genre_new) %in% colnames(dtm_genre))]
-      
+       
       #apply the lda model
       lda_genre_new = posterior(lda_genre, dtm_genre_new)$topics
       
@@ -80,33 +64,40 @@ find_recs = function(title, author) {
       wgt = lda_genre_new[topic_new[1]] / (lda_genre_new[topic_new[1]] + lda_genre_new[topic_new[2]])
       neighbors = c(ceiling(10 * wgt), floor(10 * (1 - wgt)))
       
-      #then find the nearest neighbors from the matching topics
-      c_desc_new = Corpus(VectorSource(paste(desc, genre)))
-      dtm_desc_new = DocumentTermMatrix(c_desc_new)
+      #then find the nearest neighbors from the matching topics based on descriptions
+      #first clean the description
+      desc = gsub('-|nbsp', '', desc)
+      desc = gsub('[^A-Za-z]', ' ', desc)
       
+      c_desc = Corpus(VectorSource(desc))
+      c_desc = tm_map(c_desc, removeWords, c(stopwords('SMART'), stopwords('english')))
+      c_desc = lapply(c_desc, rm_space)
+      c_desc = lapply(c_desc, pos_tag)
+      
+      #gather recommendations
       recs = data.frame(matrix(nrow = 0, ncol = ncol(books[[1]])))
       for (i in 1:2) {
         if(neighbors[i] > 0) {
-          #only keep terms included in the training dtm
-          dtm_desc_new = dtm_desc_new[, which(colnames(dtm_desc_new) %in% colnames(dtm_desc_gr_t[[i]]))]
+          #remove the book from the training set if it is already included
+          title_author_train = tolower(paste(books[[topic_new[i]]]$title, books[[topic_new[i]]]$author))
+          title_author_new = tolower(paste(title, author))
+          title_author_train = gsub('[^a-z]', '', title_author_train)
+          title_author_new = gsub('[^a-z]', '', title_author_new)
           
-          #apply the lda model
-          lda_desc_new = posterior(lda_desc[[topic_new[i]]], dtm_desc_new)
-          lda_desc_topics_new = lda_desc_new$topics
+          descs_train = descs[[topic_new[i]]][!grepl(title_author_new, title_author_train)]
+          books_train = books[[topic_new[i]]][!grepl(title_author_new, title_author_train), ]
           
-          #remove the book from the training set if it is already included (based on title and author name)
-          b = books[[topic_new[i]]]
-          t = lda_desc_topics[[topic_new[i]]]
+          #append the description to all the other descriptions within this genre
+          desc_all = c(c_desc, descs_train)
           
-          title_author = tolower(rm_space(paste(b$title, b$author)))
-          title_author_new = tolower(rm_space(paste(title, author)))
-          if(length(grep(title_author_new, title_author)) > 0) {
-            b = b[-grep(title_author_new, title_author), ]
-            t = t[-grep(title_author_new, title_author), ]
-          }
+          #create dtm
+          dtm_all = create_dtm(Corpus(VectorSource(desc_all)))
           
-          dists = apply(t, 1, function(x) dist(rbind(x, lda_desc_topics_new)))
-          recs = rbind(recs, b[order(dists), ][1:neighbors[i], ])  
+          #calculate cosine similarities between the new book and the training set
+          sim = cosine_similarity(dtm_all)
+          
+          #find the most similar books up to the amount defined by neighbors[i]
+          recs = rbind(recs, books_train[order(sim, decreasing = T)[1:neighbors[i]], ])
         }
       }
       out = list(recs, 'Results are based on descriptions on goodreads.')
