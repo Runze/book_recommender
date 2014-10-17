@@ -31,7 +31,7 @@ extract_genre = function(pg_src, method) {
   genre_votes[is.na(genre_votes)] = 0
   
   #repeat genre tags per votes
-  genres = gsub('[0-9,]+users', '', genres)
+  genres = gsub('[0-9,]+user.*', '', genres)
   genres = rep(genres, genre_votes)
   genres = paste(genres, collapse = ' ')
   genres = gsub('>', ' ', genres)
