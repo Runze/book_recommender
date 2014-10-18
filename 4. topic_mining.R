@@ -47,10 +47,10 @@ plot(genre_html)
 
 #then mine the description
 #combine descriptions and process them as a corpus
-desc = paste(nyt_npr_gr$desc, nyt_npr_gr$desc_gr)
-desc = gsub('NA|nbsp', '', desc)
-desc = gsub('-', '', desc)
-desc = gsub('[^A-Za-z]', ' ', desc)
+nyt_npr_gr$desc = paste(nyt_npr_gr$desc, nyt_npr_gr$desc_gr)
+nyt_npr_gr$desc = gsub('NA|nbsp', '', nyt_npr_gr$desc)
+nyt_npr_gr$desc = gsub('-', '', nyt_npr_gr$desc)
+desc = gsub('[^A-Za-z]', ' ', nyt_npr_gr$desc)
 
 c_desc = Corpus(VectorSource(desc))
 c_desc = tm_map(c_desc, removeWords, c(stopwords('SMART'), stopwords('english')))
@@ -87,3 +87,17 @@ for (i in 1:max(nyt_npr_gr$lda_genre)) {
 save(descs, file = 'app/data/descs.RData')
 save(books, file = 'app/data/books.RData')
 
+#find the most frequent terms used in each genre
+dtms = lapply(descs, function(x) create_dtm(Corpus(VectorSource(x))))
+tfs = lapply(dtms, col_sums)
+tfs = lapply(tfs, function(x) x[order(x, decreasing = T)][1:10])
+terms = lapply(tfs, names)
+
+#create html table illustrating the number of books per genre
+terms_df = data.frame(matrix(unlist(terms), nrow = 20, byrow = T))
+terms_df = data.frame(cbind(1:20, terms_df))
+names(terms_df) = c('topic', 'term1', 'term2', 'term3', 'term4', 'term5',
+                    'term6', 'term7', 'term8', 'term9', 'term10')
+
+terms_html = gvisTable(terms_df, options = list(width = 800, height = 500))
+plot(terms_html)
