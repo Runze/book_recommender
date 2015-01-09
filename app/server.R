@@ -1,26 +1,32 @@
 library(shiny)
-library(shinyIncubator)
-library(googleVis)
-suppressPackageStartupMessages(library(googleVis))
 
-shinyServer(function(input, output, session){
+shinyServer(function(input, output){
   #call find_recs function from the global file
-  observe({
-    if (input$submit == 0)
-      return()
+  recs = reactive({
+    validate(
+      need(nchar(input$title) > 0, 'Enter a book to see recommendations.')
+    )
     
-    out = isolate({
-      withProgress(session, {
-        setProgress(message = 'Finding recommendations...')
-        find_recs(input$title, input$author)
-      })
+    withProgress(message = 'Finding recommendations...', {
+      out = find_recs(input$title, input$author)
     })
     
-    output$msg = renderUI({HTML('<h6>', out$msg, '<h6>')})
-    output$table = renderGvis({
-      if (length(out) > 1) {
-        gvisTable(out$recs, options = list(allowHtml = T, width = 900, height = 600))
-      }
-    })
+    validate(
+      need(nrow(out$recs_wv) > 0, 'Sorry, not enough information is gathered to make recommendations with.')
+    )
+    
+    out
   })
+  
+  output$table = renderDataTable({
+    input$submit
+    out = isolate(recs())
+    
+    if (input$method == 'word_vec') {
+      out$recs_wv
+    }
+    else {
+      out$recs_cos
+    }
+  }, options = list(searching = F, pageLength = 5, lengthMenu = c(5, 10), autoWidth = F))
 })

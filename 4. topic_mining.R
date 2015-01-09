@@ -1,12 +1,11 @@
 library(tm)
 library(NLP)
-library(openNLP)
 library(stringr)
 library(slam)
 library(topicmodels)
 library(ggplot2)
 library(plyr)
-library(googleVis)
+options(stringsAsFactors = F)
 source('app/helper_functions.R')
 
 load('nyt_npr_gr.RData')
@@ -47,57 +46,28 @@ plot(genre_html)
 
 #then mine the description
 #combine descriptions and process them as a corpus
-nyt_npr_gr$desc = paste(nyt_npr_gr$desc, nyt_npr_gr$desc_gr)
-nyt_npr_gr$desc = gsub('NA|nbsp', '', nyt_npr_gr$desc)
-nyt_npr_gr$desc = gsub('-', '', nyt_npr_gr$desc)
-desc = gsub('[^A-Za-z]', ' ', nyt_npr_gr$desc)
+desc = paste(nyt_npr_gr$desc, nyt_npr_gr$desc_gr)
+desc = gsub('NA|nbsp', '', desc)
+desc = gsub('[^A-Za-z]', ' ', desc)
+nyt_npr_gr$desc = desc
 
-c_desc = Corpus(VectorSource(desc))
-c_desc = tm_map(c_desc, removeWords, c(stopwords('SMART'), stopwords('english')))
-c_desc = lapply(c_desc, rm_space)
-
-#pos tag
-c_desc = lapply(c_desc, pos_tag)
-to_excl = sapply(c_desc, nchar) == 0 | c_desc == 'NA'
-c_desc[to_excl] = NULL
-save(c_desc, file = 'c_desc.RData')
-
-nyt_npr_gr = nyt_npr_gr[!to_excl, ]
-save(nyt_npr_gr, file = 'nyt_npr_gr.RData')
-
-#split descriptions per topic
-descs = list()
-for (i in 1:max(nyt_npr_gr$lda_genre)) {
-  descs[i] = list(c_desc[nyt_npr_gr$lda_genre == i])
-}
-
-#split the book table as well
+#split the book table per topic
 books = list()
 for (i in 1:max(nyt_npr_gr$lda_genre)) {
   b = subset(nyt_npr_gr, lda_genre == i, select = c(img, title, author, desc, amazon))
   b$img = sprintf("<img src='%s' width='100' height='133'></img>", b$img)
   b$amazon = sprintf("<a href='%s' target='_blank'>%s</a>", b$amazon, 'amazon')
-  b$desc = gsub('<U.+?>|\\(less\\)|[^[:print:]]|Â|â', ' ', b$desc)
+  b$desc = gsub('\\(less\\)', ' ', b$desc)
   b$desc = rm_space(b$desc)
-  Encoding(b$desc) = 'UTF-8'
   
   books[i] = list(b)
 }
 
-save(descs, file = 'app/data/descs.RData')
 save(books, file = 'app/data/books.RData')
 
-#find the most frequent terms used in each genre
-dtms = lapply(descs, function(x) create_dtm(Corpus(VectorSource(x))))
-tfs = lapply(dtms, col_sums)
-tfs = lapply(tfs, function(x) x[order(x, decreasing = T)][1:10])
-terms = lapply(tfs, names)
+#off to python to build word vectors!
+write.csv(nyt_npr_gr, file = 'nyt_npr_gr.csv', row.names = F)
 
-#create html table illustrating the number of books per genre
-terms_df = data.frame(matrix(unlist(terms), nrow = 20, byrow = T))
-terms_df = data.frame(cbind(1:20, terms_df))
-names(terms_df) = c('topic', 'term1', 'term2', 'term3', 'term4', 'term5',
-                    'term6', 'term7', 'term8', 'term9', 'term10')
-
-terms_html = gvisTable(terms_df, options = list(width = 800, height = 500))
-plot(terms_html)
+#...after executing the python code, resave to rdata (for faster loading)
+word2vec_matrix = read.csv('word2vec_matrix.csv', header = T, row.names = 1)
+save(word2vec_matrix, file = 'app/data/word2vec_matrix.RData')

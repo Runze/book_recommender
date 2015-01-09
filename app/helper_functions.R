@@ -13,7 +13,7 @@ rm_space = function(x) {
 
 #extract genres from goodreads
 extract_genre = function(pg_src, method) {
-  if(method == 'css') {
+  if (method == 'css') {
     genres = tryCatch(html_text(html_nodes(pg_src, '.elementList')),
                       error = function(cond) return(NA))  
   }
@@ -38,14 +38,15 @@ extract_genre = function(pg_src, method) {
   genres = gsub('-', '', genres)
   genres = rm_space(genres)
   
+  genres = ifelse(nchar(genres) == 0, NA, genres)
   return(genres)
 }
 
 #extract descriptions from goodreads
 extract_desc = function(pg_src, method) {
-  if(method == 'css') {
+  if (method == 'css') {
     descs = tryCatch(html_text(html_nodes(pg_src, '#description span')),
-                     error = function(cond) return(NA))    
+                     error = function(cond) return(NA))
   }
   else {
     descs = tryCatch(html_text(html_nodes(pg_src, xpath = '//*[(@id = "description")]//span')),
@@ -57,7 +58,6 @@ extract_desc = function(pg_src, method) {
   
   desc = gsub('-', '', desc)
   desc = rm_space(desc)
-  
   return(desc)
 }
 
@@ -74,61 +74,23 @@ lda_loop = function(d, t_min, t_max, t_break) {
   return(lda_eval)
 }
 
-#tag all words to only keep adjectives, nouns, and verbs
-pos_tag = function(x) {
-  gc()
-  cleaned = ''
+#function to calculate similarities between books based on word vectors' correlation matrix
+book_similarity = function(desc_train, desc_new, cor_matrix) {
+  cor_matrix = cor_matrix[, colnames(cor_matrix) %in% desc_train]
   
-  if (nchar(x) > 0) {
-    sent_token_annotator = Maxent_Sent_Token_Annotator()
-    word_token_annotator = Maxent_Word_Token_Annotator()  
-    a = NLP::annotate(x, list(sent_token_annotator, word_token_annotator))
-    
-    pos_tag_annotator = Maxent_POS_Tag_Annotator()
-    a = NLP::annotate(x, pos_tag_annotator, a)
-    w = subset(a, type == 'word')
-    
-    #keep adjectives, nouns, and verbs
-    to_keep = grep('JJ|NN|VB', unlist(w$features))
-    
-    #but not pronouns
-    pn = grep('NNP', unlist(w$features))
-    to_keep = setdiff(to_keep, pn)
-    
-    start = w$start[to_keep]
-    end = w$end[to_keep]
-    
-    for (i in 1:length(to_keep)) {
-      cleaned = rm_space(paste(cleaned, str_sub(x, start[i], end[i])))
-    }
-  }
-  return(cleaned)
+  #for each word in the new book, find the most similar word in the training book
+  cor_maxes = tryCatch(apply(cor_matrix, 1, max),
+                       error = function(cond) return(NA))
+  
+  #using this method, the final score is the sum of the correlation coefficients
+  #between the most similar words found in the 2 books
+  return(sum(cor_maxes))
 }
 
-#create dtm with tf-idf trimming
-create_dtm = function(x) {
-  dtm = DocumentTermMatrix(x, control = list(minWordLength = 3))
-  
-  #trim based on tf-idf
-  tf_all = as.matrix(dtm / row_sums(dtm))
-  tf_all[tf_all == 0] = NA
-  tf = apply(tf_all, 2, mean, na.rm = T)
-  
-  idf = log2(nrow(dtm) / col_sums(dtm > 0))
-  tf_idf = tf * idf
-  
-  #keep the terms with tf-idf above 25th percentile
-  dtm = dtm[, tf_idf >= quantile(tf_idf, .25)]
-  to_exclude = row_sums(dtm) == 0
-  dtm = dtm[!to_exclude, ]
-  
-  return(dtm)
-}
-
-#function to calculate cosine similarities between the first row and the rest of a matrix
+#function to calculate cosine similarities between the first row and the rest of a dtm matrix
 cosine_similarity = function(m) {
-   m1 = as.matrix(m[1, ])
-   m2 = as.matrix(m[-1, ])
-   sim = apply(m2, 1, function(x) x %*% t(m1) / sqrt(sum(x^2) * sum(m1^2)))
-   return(sim)
+  m1 = as.vector(m[1, ])
+  m2 = as.matrix(m[-1, ])
+  sim = apply(m2, 1, function(x) x %*% m1 / sqrt(sum(x^2) * sum(m1^2)))
+  return(sim)
 }
