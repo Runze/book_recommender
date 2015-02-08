@@ -1,5 +1,6 @@
 library(rvest)
 library(plyr)
+library(dplyr)
 library(stringr)
 options(stringsAsFactors = F)
 source('app/helper_functions.R')
@@ -11,7 +12,7 @@ base_ps = html(base_url)
 pgs = as.integer(html_text(html_node(base_ps, 'a:nth-child(13)')))
 
 #loop over all the pages
-gr_df = data.frame(matrix(nrow = 0, ncol = 5))
+gr_books = data.frame(matrix(nrow = 0, ncol = 5))
 for (p in 1:pgs) {
   cat(p, 'of', as.integer(pgs), '\n')
   url = sprintf('%s?page=%d', base_url, p)
@@ -27,71 +28,57 @@ for (p in 1:pgs) {
     as.integer(gsub(',', '', str_extract(html_text(html_nodes(ps, '#all_votes div .uitext a:nth-child(3)')),
                                          '[0-9,]+')))
   
-  gr_df = data.frame(rbind(gr_df, cbind(title, author, url, rating, vote)))
+  gr_books = data.frame(rbind(gr_books, cbind(title, author, url, rating, vote)))
 }
 
-gr_df$rank = 1:nrow(gr_df)
-save(gr_df, file = 'gr_df.RData')
+save(gr_books, file = 'intermediary/gr_books.rda')
 
-gr_df_s = subset(gr_df, rating >= 4) #only keep books with a rating above 4
-gr_df_s = subset(gr_df_s, rank <= quantile(rank, .5)) #only keep the top 50 percentile
-save(gr_df_s, file = 'gr_df_s.RData')
+# analyze distribution of ratings
+summary(gr_books$rating) # 0 - 5
 
-#check if these books are included in the nyt and npr list already
-load('nyt_npr.RData')
-title_author_nyt_npr = paste(nyt_npr$title, nyt_npr$author)
-title_author_nyt_npr = gsub('[^[:alpha:]]', '', tolower(title_author_nyt_npr))
+# keep only books with ratings >= median rating
+gr_books = filter(gr_books, rating >= median(gr_books$rating))
 
-title_author_gr = paste(gr_df_s$title, gr_df_s$author)
-title_author_gr = gsub('[^[:alpha:]]', '', tolower(title_author_gr))
+# check if these books are included in the nyt and npr list already
+load('intermediary/nyt_npr.rda')
+nyt_npr_authors_titles = rm_space(gsub('[^a-z]', ' ', tolower(paste(nyt_npr$author, nyt_npr$title))))
+gr_authors_titles = rm_space(gsub('[^a-z]', ' ', tolower(paste(gr_books$author, gr_books$title))))
+dups = grep(paste(nyt_npr_authors_titles, collapse = '|'), gr_authors_titles)
 
-incl = which(title_author_gr %in% title_author_nyt_npr)
-gr_df_s = gr_df_s[-incl, ]
-save(gr_df_s, file = 'gr_df_s.RData')
+gr_books = gr_books[-dups, ]
+save(gr_books, file = 'intermediary/gr_books.rda')
 
-#get genres and descriptions for the remaining books
-gr = data.frame(matrix(nrow = 0, ncol = 6))
-for (i in 1:nrow(gr_df_s)) {
-  cat(i, 'of', nrow(gr_df_s), '\n')
-  book_url = paste0('https://www.goodreads.com', gr_df_s$url[i])
-  book_ps = tryCatch(html(book_url),
-                     error = function(cond) return(NA))
+# retrieve genres, descriptions, ratings, image, and amazon links from goodreads
+extract_gr_gr = function(title, author) {
+  # first find the link to the book based on the title and author pair
+  link = find_books_gr(title, author)
   
-  #in case of error, try 2 more times
-  t = 0
-  while (is.na(book_ps) & t < 2) {
-    Sys.sleep(10)
-    book_ps = tryCatch(html(book_url),
-                       error = function(cond) return(NA))
-    t = t + 1
-  }
-  
-  if(!is.na(book_ps)) {
-    #check language
-    lang = html_text(html_nodes(book_ps, '#bookDataBox :nth-child(3) .infoBoxRowItem'))
-    if('English' %in% lang) {
-      #get genres
-      genres = extract_genre(book_ps, 'css')
-      
-      #get descriptions
-      desc = extract_desc(book_ps, 'css')
-      
-      #get image
-      img = html_attr(html_nodes(book_ps, '#coverImage'), 'src')
-      
-      #get amazon link
-      amazon = html_attr(html_nodes(book_ps, '.firstBuyButton .buttonBar'), 'href')
-      amazon = paste0('https://www.goodreads.com', amazon)
-      
-      gr = data.frame(rbind(gr, c(gr_df_s$title[i], gr_df_s$author[i], genres, desc, img, amazon))) 
-    }
+  # then retrieve relevant information
+  if (!is.null(link)) {
+    return(extract_gr(link))    
   }
 }
-names(gr) = c('title', 'author', 'genre_gr', 'desc', 'img', 'amazon')
-gr = subset(gr, genre_gr != '')
-save(gr, file = 'gr.RData')
 
-#combine with nyt and npr
-nyt_npr_gr = data.frame(rbind.fill(nyt_npr, gr))
-save(nyt_npr_gr, file = 'nyt_npr_gr.RData')
+gr = list()
+for (i in 1:nrow(gr_books)) {
+  cat(i, 'of', nrow(gr_books), '\n')
+  link = paste0('https://www.goodreads.com', gr_books$url[i])
+  gr[i] = list(extract_gr(link, get_title = F, get_author = F, get_rating = F))
+  gr[[i]]$url = gr_books$url[i]
+}
 
+# filter out unfound or unhelpful books
+gr_filtered = gr[sapply(gr, function(x) x$genres != '' & x$desc != '')]
+gr_filtered = lapply(gr_filtered, lapply, function(x) ifelse(length(x) == 0, '', x))
+gr_filtered = ldply(gr_filtered, data.frame)
+
+# merge with the rest of the information
+gr_books = inner_join(gr_books, gr_filtered, by = 'url')
+gr_books = select(gr_books, -url, -vote)
+
+save(gr_books, file = 'intermediary/gr_books.rda')
+
+# combine with nyt and npr books
+nyt_npr_gr = rbind(nyt_npr, gr_books)
+nyt_npr_gr = nyt_npr_gr[!duplicated(paste(nyt_npr_gr$title, nyt_npr_gr$author)), ]
+save(nyt_npr_gr, file = 'intermediary/nyt_npr_gr.rda')

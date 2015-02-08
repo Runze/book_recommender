@@ -1,75 +1,75 @@
 library(httr)
 library(plyr)
+library(dplyr)
 source('app/helper_functions.R')
 
-key = '<key>'
+key = 'f8597b398ce96a249ef0cf81a074fe87:5:65450565'
 link = sprintf('http://api.nytimes.com/svc/books/v2/lists/names.json?api-key=%s', key)
 lists = content(GET(link))
-lists_n = sapply(lists$results, function(x) x$list_name_encoded)
-lists_n_sub = lists_n[c(3:5, 7:9)]
+lists_name = sapply(lists$results, function(x) x$list_name_encoded)
+lists_name = lists_name[c(3:5, 7:9)]
 
-dates = seq(as.Date('2008-06-08'), as.Date('2014-10-05'), by = 'week')
-bs = list()
+dates = seq(as.Date('2008-06-08'), as.Date('2015-02-15'), by = 'week')
+nyt_books = list()
 k = 0
 
-for (i in 1:length(lists_n_sub)) {
+# retrieve books
+for (i in 1:length(lists_name)) {
   for (j in 1:length(dates)) {
-    cat(lists_n_sub[i], dates[j], '\n')
-    link = sprintf('http://api.nytimes.com/svc/books/v2/lists/%s/%s.json?&api-key=%s', lists_n_sub[i], dates[j], key)
+    cat(lists_name[i], dates[j], '\n')
+    link = sprintf('http://api.nytimes.com/svc/books/v2/lists/%s/%s.json?&api-key=%s', lists_name[i], dates[j], key)
     lists = content(GET(link))
     if(length(lists$results) > 0) {
-      bs[k] = lists$results
+      nyt_books[k] = lists$results
       k = k + 1
     }
     Sys.sleep(.5)
   }
 }
 
-save (bs, file = 'bs.RData')
+save (nyt_books, file = 'intermediary/nyt_books.rda')
 
+# extract relevant information
 extract_info = function(x) {
   y = list()
   
-  y$list_name = x$list_name
-  y$title = x$book_details[[1]]$title
-  y$desc = x$book_details[[1]]$description
-  y$author = x$book_details[[1]]$author
   y$isbn1 = x$book_details[[1]]$primary_isbn13
-  y$isbn2 = x$book_details[[1]]$primary_isbn10
   y$img = x$book_details[[1]]$book_image
   y$amazon = x$book_details[[1]]$amazon_product_url
   
   return(y)
 }
 
-bs_ex = lapply(bs, extract_info)
-bs_ex = ldply(bs_ex, data.frame)
-bs_ex = data.frame(sapply(bs_ex, as.character))
-save (bs_ex, file = 'bs_ex.RData')
+nyt_books = lapply(nyt_books, extract_info)
+nyt_books = ldply(nyt_books, data.frame)
+nyt_books = nyt_books[!duplicated(nyt_books$isbn1), ]
+save (nyt_books, file = 'intermediary/nyt_books.rda')
 
-#dedupe
-title_author = tolower(rm_space(paste(bs_ex$title, bs_ex$author)))
-bs_ex_uni = bs_ex[!duplicated(title_author), ]
-
-#retrieve genres and descriptions from goodreads
-extract_gr = function(x) {
-  link = paste0('https://www.goodreads.com/search?&query=', x)
-  ps = html(link)
-  y = list()
-  
-  #get genres
-  y$genre = extract_genre(ps, 'css')
-  
-  #get descriptions
-  y$desc = extract_desc(ps, 'css')
-  
-  return(y)
+# retrieve titles, authors, genres, descriptions, and ratings from goodreads
+extract_gr_nyt = function(isbn) {
+  link = paste0('https://www.goodreads.com/search?&query=', isbn)
+  return(extract_gr(link, get_img = F, get_amazon = F))
 }
 
-gr = lapply(bs_ex_uni$isbn1, extract_gr)
-bs_ex_uni$desc_gr = sapply(gr, function(x) x$desc)
-bs_ex_uni$genre_gr = sapply(gr, function(x) x$genre)
+gr = list()
+for (i in 1:length(nyt_books$isbn1)) {
+  cat(i, 'of', length(nyt_books$isbn1), '\n')
+  gr[i] = list(extract_gr_nyt(nyt_books$isbn1[i]))
+  gr[[i]]$isbn1 = nyt_books$isbn1[i]
+}
 
-#remove entries without a genre
-bs_ex_uni = subset(bs_ex_uni, genre_gr != '')
-save(bs_ex_uni, file = 'bs_ex_uni.RData')
+# filter out unfound or unhelpful books
+gr_filtered = gr[sapply(gr, function(x) x$genres != '' & x$desc != '')]
+gr_filtered = ldply(gr_filtered, data.frame)
+
+# analyze distribution of ratings
+summary(gr_filtered$rating) # 3.04 - 4.76
+
+# keep only books with ratings >= median rating
+gr_filtered = filter(gr_filtered, rating >= median(gr_filtered$rating))
+
+# merge with the rest of the information
+nyt_books = inner_join(nyt_books, gr_filtered, by = 'isbn1')
+nyt_books = select(nyt_books, -isbn1)
+
+save(nyt_books, file = 'intermediary/nyt_books.rda')

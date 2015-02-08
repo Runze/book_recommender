@@ -1,7 +1,7 @@
 library(shiny)
 
 shinyServer(function(input, output){
-  #call find_recs function from the global file
+  # call find_recs function from the global file
   recs = reactive({
     validate(
       need(nchar(input$title) > 0, 'Enter a book to see recommendations.')
